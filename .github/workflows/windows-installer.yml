@@ -1,0 +1,72 @@
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version used for the package filename and installer metadata
+        required: false
+        default: v0.14.0
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/windows-installer.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: windows-x86_64
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      AW_EXTRAS: true
+      RELEASE: true
+      TRAVIS_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || 'v0.14.0' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install packaging dependencies
+        run: |
+          choco install innosetup -y --no-progress
+          python -m pip install --upgrade pip
+          pip install poetry==1.4.2
+
+      - name: Build ActivityWatch
+        run: |
+          python -m venv venv
+          source venv/bin/activate || source venv/Scripts/activate
+          poetry install
+          make build
+
+      - name: Package installer
+        run: |
+          source venv/bin/activate || source venv/Scripts/activate
+          poetry install
+          make package
+
+      - name: Upload Windows packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: activitywatch-windows-x86_64
+          path: |
+            dist/*windows*x86_64*.zip
+            dist/*windows*x86_64*setup.exe
+          if-no-files-found: error
